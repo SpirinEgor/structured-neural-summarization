@@ -1,6 +1,3 @@
-[submodule "opengnn"]
-	path = OpenGNN
-	url = https://github.com/CoderPat/OpenGNN.git
 [submodule "OpenGNN"]
 	path = OpenGNN
 	url = https://github.com/CoderPat/OpenGNN.git

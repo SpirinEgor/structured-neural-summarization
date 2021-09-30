@@ -1,2 +1,4 @@
-rouge
-nltk
+rouge==1.0.1
+nltk==3.6.3
+tensorflow==1.14.0
+git+git://github.com/CoderPat/OpenGNN@master#egg=opengnn

@@ -19,15 +19,16 @@ from data.utils import iteratate_jsonl_gz, save_jsonl_gz
 from parsers.sourcecode.utils import subtokenizer
 
 
-IDENTIFIER_REGEX = re.compile(r'[a-zA-Z_][a-zA-Z_0-9]*')
+IDENTIFIER_REGEX = re.compile(r"[a-zA-Z_][a-zA-Z_0-9]*")
 
-def graph_transformer(initial_graph: Dict)-> Dict:
-    all_edges = defaultdict(lambda : defaultdict(set))
-    for edge_type, from_idx, to_idx in initial_graph['edges']:
+
+def graph_transformer(initial_graph: Dict) -> Dict:
+    all_edges = defaultdict(lambda: defaultdict(set))
+    for edge_type, from_idx, to_idx in initial_graph["edges"]:
         all_edges[edge_type][from_idx].add(to_idx)
 
-    backbone_seq = initial_graph['backbone_sequence']  # type: List[int]
-    nodes = initial_graph['node_labels']  # type: List[str]
+    backbone_seq = initial_graph["backbone_sequence"]  # type: List[int]
+    nodes = initial_graph["node_labels"]  # type: List[str]
 
     nodes_to_subtokenize = {}  # type: Dict[int, List[str]]
     for i, node_idx in enumerate(backbone_seq):
@@ -39,7 +40,8 @@ def graph_transformer(initial_graph: Dict)-> Dict:
 
     # Add subtoken nodes and related edges
     token_node_ids_to_subtoken_ids = defaultdict(list)  # type: Dict[int, List[int]]
-    def add_node(node_name: str)-> int:
+
+    def add_node(node_name: str) -> int:
         idx = len(nodes)
         nodes.append(node_name)
         return idx
@@ -48,7 +50,7 @@ def graph_transformer(initial_graph: Dict)-> Dict:
         for subtoken in subtokens:
             subtoken_node_idx = add_node(subtoken)
             token_node_ids_to_subtoken_ids[token_node_idx].append(subtoken_node_idx)
-            all_edges['Subtoken'][token_node_idx].add(subtoken_node_idx)
+            all_edges["Subtoken"][token_node_idx].add(subtoken_node_idx)
 
     # Now fix the backbone_sequence
     update_backbone_seq = []  # type: List[int]
@@ -60,7 +62,7 @@ def graph_transformer(initial_graph: Dict)-> Dict:
 
     # Now make sure that there are NextToken edges
     for i in range(1, len(update_backbone_seq)):
-        all_edges['NextToken'][update_backbone_seq[i-1]].add(update_backbone_seq[i])
+        all_edges["NextToken"][update_backbone_seq[i - 1]].add(update_backbone_seq[i])
 
     # Finally, output the defined data structure
     flattened_edges = []
@@ -72,19 +74,21 @@ def graph_transformer(initial_graph: Dict)-> Dict:
     return dict(edges=flattened_edges, node_labels=nodes, backbone_sequence=backbone_seq)
 
 
-def transform_graphs(input_file: str)-> Iterable[Dict]:
+def transform_graphs(input_file: str) -> Iterable[Dict]:
     for graph in iteratate_jsonl_gz(input_file):
         yield graph_transformer(graph)
 
-def run(args):
-    save_jsonl_gz(args['REWRITTEN_OUTPUTS_FILE'], transform_graphs(args['INPUTS_FILE']))
 
-if __name__ == '__main__':
+def run(args):
+    save_jsonl_gz(args["REWRITTEN_OUTPUTS_FILE"], transform_graphs(args["INPUTS_FILE"]))
+
+
+if __name__ == "__main__":
     args = docopt(__doc__)
     try:
         run(args)
     except:
-        if args.get('--debug', False):
+        if args.get("--debug", False):
             _, value, tb = sys.exc_info()
             traceback.print_exc()
             pdb.post_mortem(tb)

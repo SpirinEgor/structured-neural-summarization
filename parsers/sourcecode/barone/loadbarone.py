@@ -19,14 +19,15 @@ from parsers.sourcecode.barone.ast_graph_generator import AstGraphGenerator
 
 # Extracts function names
 def decl_tokenizer(decl):
-    function_name = re.search('(?<=def )[\w_-]+(?=\(.*\):)', decl).group(0)
+    function_name = re.search("(?<=def )[\w_-]+(?=\(.*\):)", decl).group(0)
     return splitter(function_name)
 
 
 # Tokenize on spaces and around delimiters.
 # Keep delimiters together only if it makes sense (e.g. parentheses, dots)
 docstring_regex_tokenizer = re.compile(
-    r"[^\s,'\"`.():\[\]=*;>{\}+-/\\]+|\\+|\.+|\(\)|{\}|\[\]|\(+|\)+|:+|\[+|\]+|{+|\}+|=+|\*+|;+|>+|\++|-+|/+")
+    r"[^\s,'\"`.():\[\]=*;>{\}+-/\\]+|\\+|\.+|\(\)|{\}|\[\]|\(+|\)+|:+|\[+|\]+|{+|\}+|=+|\*+|;+|>+|\++|-+|/+"
+)
 
 
 def docstring_tokenize(docstr: str):
@@ -41,14 +42,14 @@ def process_data(inputs, outputs, task_type):
     for idx, (inp, output) in enumerate(zip(inputs, outputs)):
         try:
             if idx % 100 == 0:
-                print('%.1f %%    \r' % (idx / float(len(inputs)) * 100), end="")
+                print("%.1f %%    \r" % (idx / float(len(inputs)) * 100), end="")
 
             visitor = AstGraphGenerator()
             visitor.visit(parse(inp))
 
-            edge_list = [(t, origin, destination)
-                         for (origin, destination), edges
-                         in visitor.graph.items() for t in edges]
+            edge_list = [
+                (t, origin, destination) for (origin, destination), edges in visitor.graph.items() for t in edges
+            ]
 
             if task_type == "func-doc":
                 docs_words.append(doc_tokenizer(output))
@@ -57,38 +58,38 @@ def process_data(inputs, outputs, task_type):
 
             graph_node_labels = [label.strip() for (_, label) in sorted(visitor.node_label.items())]
 
-            data.append({"edges": edge_list,
-                         "backbone_sequence": visitor.terminal_path,
-                         "node_labels": graph_node_labels})
+            data.append(
+                {"edges": edge_list, "backbone_sequence": visitor.terminal_path, "node_labels": graph_node_labels}
+            )
 
         except Exception as e:
             errors += 1
 
-    print("Generated %d graphs out of %d snippets" %
-          (len(inputs) - errors, len(inputs)))
+    print("Generated %d graphs out of %d snippets" % (len(inputs) - errors, len(inputs)))
 
     return data, docs_words
 
 
 def main():
     args = docopt(__doc__)
-    code_data = args['INPUT_CODE_DATA']
-    docs_data = args['INPUT_DOCS_DATA']
+    code_data = args["INPUT_CODE_DATA"]
+    docs_data = args["INPUT_DOCS_DATA"]
 
-    task_type = args.get('--task_type', "func-doc")
+    task_type = args.get("--task_type", "func-doc")
 
     with open(code_data) as f:
         inputs = f.readlines()
-    with open(docs_data, 'rb') as f:
-        labels = [line.decode(encoding='utf-8', errors='ignore') for line in f]
+    with open(docs_data, "rb") as f:
+        labels = [line.decode(encoding="utf-8", errors="ignore") for line in f]
 
-    inputs = [inp.replace("DCNL ", "\n").replace(
-        " DCSP ", "\t").replace("DCSP ", "\t") for inp in inputs]
+    inputs = [inp.replace("DCNL ", "\n").replace(" DCSP ", "\t").replace("DCSP ", "\t") for inp in inputs]
 
     # unident body so it can be parsed
-    if task_type == 'func-name':
-        inputs = ["\n".join([line[2 if not idx and line[1] == "\t" else 1:]
-                             for idx, line in enumerate(inp.split("\n"))]) for inp in inputs]
+    if task_type == "func-name":
+        inputs = [
+            "\n".join([line[2 if not idx and line[1] == "\t" else 1 :] for idx, line in enumerate(inp.split("\n"))])
+            for inp in inputs
+        ]
 
     labels = [label.replace("DCNL ", "\n").replace("DCSP ", "\t") for label in labels]
 
@@ -96,8 +97,8 @@ def main():
 
     graphs, docs = process_data(inputs, labels, task_type)
 
-    save_jsonl_gz(args['OUT_FILE_PREFIX'] + "_graphs.jsonl.gz", graphs)
-    save_jsonl_gz(args['OUT_FILE_PREFIX'] + "_summary.jsonl.gz", docs)
+    save_jsonl_gz(args["OUT_FILE_PREFIX"] + "_graphs.jsonl.gz", graphs)
+    save_jsonl_gz(args["OUT_FILE_PREFIX"] + "_summary.jsonl.gz", docs)
 
 
 if __name__ == "__main__":

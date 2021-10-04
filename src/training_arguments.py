@@ -3,7 +3,7 @@ from os.path import join
 
 from data_preprocessing import GRAPH_FILENAME, TARGET_FILENAME, NODE_VOCAB, EDGE_VOCAB, TARGET_VOCAB
 
-DEFAULT_DATA_DIR = "../data/java2graph/small-processed"
+DEFAULT_DATA_DIR = "../../data/java2graph/small-processed"
 
 DEFAULT_TRAIN_SOURCE_FILE = join(DEFAULT_DATA_DIR, "train", GRAPH_FILENAME)
 DEFAULT_TRAIN_TARGET_FILE = join(DEFAULT_DATA_DIR, "train", TARGET_FILENAME)

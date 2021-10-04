@@ -11,6 +11,8 @@ Options:
 """
 import logging
 import os
+import sys
+
 from docopt import docopt
 import json
 import pdb

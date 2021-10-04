@@ -1,54 +1,75 @@
 # Structured Neural Summarization
 
-A repository with the code for [the paper](https://arxiv.org/abs/1811.01824) with the same title. The experiments are based on the more general-purpose graph neural network library [OpenGNN](https://github.com/CoderPat/OpenGNN). You can install it by following it's README.md. Also some scripts are dependent on some additional libraries specified in the requirements file
+For the original README refer to [original repo](https://github.com/CoderPat/structured-neural-summarization).
 
-Experiments are based around the `train_and_eval.py` script. Besides the main experiments, this repo also contains the following folders:
+## Requirements
 
-* [Parsers](parsers): A collection of scripts to parse and process various datasets to the format used by the experiments
-* [Data](data): A collection of scripts to utility functions to handle and analyse the formated data
-* [Models](models): Some bash script wrapppers around the main script with some model/hyperparameter combination for diferent experiments
-
-## Getting Started
-
-As an example, we will show how run a sequenced-graph to sequence model with attention on the [CNN/DailyMail](https://cs.nyu.edu/~kcho/DMQA/) dataset.
-This assumed the process data is located in 
-```/data/naturallanguage/cnn_dailymail/split/{train,valid,test}/{inputs,targets}.jsonl.gz```.
-
-For instruction on how to process see the corresponding [subfolder](parsers/naturallanguage/dmcnn).
-
-Start by build vocabularies for the node and edge labels in the input side and tokens in the output side by running
-
-```bash
-ognn-build-vocab --field_name node_labels \
-                 --save_vocab /data/naturallanguage/cnn_dailymail/node.vocab \
-                 /data/naturallanguage/cnn_dailymail/split/train/inputs.jsonl.gz
-ognn-build-vocab --no_pad_token --field_name edges --string_index 0 \
-                 --save_vocab /data/naturallanguage/cnn_dailymail/edge.vocab \
-                 /data/naturallanguage/cnn_dailymail/split/train/inputs.jsonl.gz
-ognn-build-vocab --with_sequence_tokens \
-                 --save_vocab /data/naturallanguage/cnn_dailymail/output.vocab \
-                 /data/naturallanguage/cnn_dailymail/split/train/targets.jsonl.gz 
+Use `requirements.txt` to install all necessary dependencies:
+```shell
+pip install -r requirements.txt
 ```
 
-Then run
-
-```bash
-python train_and_eval.py   
+Installing OpenGNN may require manual installation from the repo:
+1. Clone GitHub repo with sources:
+```shell
+git clone https://github.com/CoderPat/OpenGNN/tree/3c1229ef58c0d95fcbe58082e89eb9a2a2694011
+```
+2. Move to the folder with it and install OpenGNN as python package:
+```shell
+pip install -e .
 ```
 
-This will create the model directory `cnndailymail_summarizer`, which contains tensorflow checkpoint and event files that can monitored in tensorboard.
+## Data preprocessing
 
-We can also pass directly the file we wish to do inference on by running
+Assume that you have a Java dataset with source code already split into holdouts:
+```
+dataset-name/
+    train/
+    val/
+    test/
+```
+**First**, we need to extract graphs from the data.
+Navigate to the folder with parser: [`parsers/sourcecode/java`](parsers/sourcecode/java).
+There are already prepared configuration files for the IntelliJ IDEA,
+so you can open parser as project in it and use run button to process files.
 
-```bash
-python train_and_eval.py --infer_source_file /data/naturallanguage/cnn_dailymail/split/test/inputs.jsonl.gz \
-                         --infer_predictions_file /data/naturallanguage/cnn_dailymail/split/test/predictions.jsonl
+Of course, you can do it manually. You need the Maven and Java at least 8th version.
+1. Build jar executable file:
+```shell
+mvn clean compile assembly:single
+```
+2. Run jar with paths to original dataset and output folder:
+```shell
+java -jar target/java2graph-1.0-jar-with-dependencies.jar <path>/dataset-name <output-path>
 ```
 
-Then print the metrics on the predictions run
+During graph extraction all logs are stored in `log.txt` file.
 
-```bash
-python rouge_evaluator /data/naturallanguage/cnn_dailymail/split/test/summaries.jsonl.gz \
-                       /data/naturallanguage/cnn_dailymail/split/test/predictions.jsonl
-                         
+**Second**, we need to process graphs to model format. Use `data_preprocessing` script for it:
+```shell
+python data_preprocessing.py -i <input-path> -o <output-path>
 ```
+`<input-path>` — path to graphs extracted from the first step.
+
+`<output-path>` — path to output folder.
+
+## Model training
+
+[`Models`](models) folder contains multiple example of scripts to train and evaluate the model.
+Use them and modify to suit your needs.
+Quick overview:
+- [`train_and_eval.py`](train_and_eval.py) script is used to train GNN with evaluation every N steps.
+- [`infer.py`](infer.py) script is used to run trained model on test data.
+
+## Known issues
+
+This repo doesn't change or modify any behaviour of the original model.
+This repo makes step forward for easy usage and running it.
+Unfortunately, some errors and bugs appear, all known issues collected in this section.
+
+### `'MapDataset' object has no attribute 'output_shapes'`
+
+In OpenGNN sources navigate to [`opengnn/utils/data.py`](OpenGNN/opengnn/utils/data.py).
+Find `get_padded_shapes` function and change `dataset.output_shapes` to `tf.compat.v1.data.get_output_shapes(dataset)`.
+
+Corresponding [GutHub issue](https://github.com/tensorflow/tensorflow/issues/28148).

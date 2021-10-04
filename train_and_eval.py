@@ -1,203 +1,29 @@
-import argparse
-
-from opengnn.models import GraphToSequence, SequencedGraphToSequence
-
-from opengnn.encoders import GGNNEncoder, SequencedGraphEncoder
-from opengnn.decoders.sequence import RNNDecoder, HybridPointerDecoder
-from opengnn.inputters import TokenEmbedder, CopyingTokenEmbedder
-from opengnn.inputters import GraphEmbedder
-from opengnn.inputters import SequencedGraphInputter
-from opengnn.utils import CoverageBahdanauAttention, read_jsonl_gz_file
+import json
+import os
+from math import ceil
 
 import tensorflow as tf
-import os
-import json
-
-from tensorflow.contrib.seq2seq import BahdanauAttention
-from tensorflow.python.util import function_utils
-from tensorflow.python import debug as tf_debug
-
 from rouge import Rouge
+from tensorflow.contrib.seq2seq import BahdanauAttention
+from tensorflow.python import debug as tf_debug
+from tqdm.auto import tqdm
 
-tf.logging.set_verbosity(tf.logging.ERROR)
+from opengnn.decoders.sequence import RNNDecoder, HybridPointerDecoder
+from opengnn.encoders import GGNNEncoder, SequencedGraphEncoder
+from opengnn.inputters import GraphEmbedder
+from opengnn.inputters import SequencedGraphInputter
+from opengnn.inputters import TokenEmbedder, CopyingTokenEmbedder
+from opengnn.models import GraphToSequence, SequencedGraphToSequence
+from opengnn.utils import CoverageBahdanauAttention, read_jsonl_gz_file
+from training_arguments import configure_arg_parser
+
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+tf.get_logger().setLevel("ERROR")
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 
-DEFAULT_TRAIN_SOURCE_FILE = "data/naturallanguage/cnn_dailymail/split/train/inputs.jsonl.gz"
-DEFAULT_TRAIN_TARGET_FILE = "data/naturallanguage/cnn_dailymail/split/train/summaries.jsonl.gz"
-
-DEFAULT_VALID_SOURCE_FILE = "data/naturallanguage/cnn_dailymail/split/valid/inputs.jsonl.gz"
-DEFAULT_VALID_TARGET_FILE = "data/naturallanguage/cnn_dailymail/split/valid/summaries.jsonl.gz"
-
-DEFAULT_NODE_VOCAB_FILE = "data/naturallanguage/cnn_dailymail/node.vocab"
-DEFAULT_EDGE_VOCAB_FILE = "data/naturallanguage/cnn_dailymail/edge.vocab"
-DEFAULT_TARGET_VOCAB_FILE = "data/naturallanguage/cnn_dailymail/output.vocab"
-
-DEFAULT_MODEL_NAME = "cnndailymail_summarizer"
-
-
 def main():
-    # argument parsing
-    parser = argparse.ArgumentParser()
-
-    # optimization arguments
-    parser.add_argument("--optimizer", default="adam", type=str, help="Number of epochs to train the model")
-    parser.add_argument("--train_steps", default=300000, type=int, help="Number of steps to optimize")
-    parser.add_argument("--learning_rate", default=0.001, type=float, help="The learning rate for the optimizer")
-    parser.add_argument("--lr_decay_rate", default=0.0, type=float, help="Learning rate decay rate")
-    parser.add_argument(
-        "--lr_decay_steps", default=10000, type=float, help="Number of steps between learning rate decay application"
-    )
-    parser.add_argument(
-        "--adagrad_initial_accumulator", default=0.1, type=float, help="Number of epochs to train the model"
-    )
-    parser.add_argument("--momentum_value", default=0.95, type=float, help="Number of epochs to train the model")
-    parser.add_argument("--batch_size", default=16, type=int, help="Number of epochs to train the model")
-    parser.add_argument(
-        "--sample_buffer_size",
-        default=10000,
-        type=int,
-        help="The number of samples in the buffer shuffled before training",
-    )
-    parser.add_argument(
-        "--bucket_width", default=5, type=int, help="Range of allowed lengths in a batch. Optimizes RNN loops"
-    )
-    parser.add_argument("--clip_gradients", default=5.0, type=float, help="Maximum norm of the gradients")
-    parser.add_argument(
-        "--validation_interval",
-        default=20000,
-        type=int,
-        help="The number of training steps between each validation run",
-    )
-    parser.add_argument(
-        "--validation_metric", default="rouge", type=str, help="The metric to compare models between validations"
-    )
-    parser.add_argument(
-        "--patience", default=5, type=int, help="Number of worse validations needed to trigger early stop"
-    )
-    parser.add_argument("--logging_window", default=200, type=int, help="Number of steps taken when logging")
-
-    # model options arguments
-    parser.add_argument("--source_embeddings_size", default=128, type=int, help="Size of the input tokens embeddings")
-    parser.add_argument("--target_embeddings_size", default=128, type=int, help="Size of the target token embeddings")
-    parser.add_argument(
-        "--embeddings_dropout", default=0.2, type=float, help="Dropout applied to the node embeddings during training"
-    )
-    parser.add_argument("--node_features_size", default=256, type=int, help="Size of the node features hidden state")
-    parser.add_argument(
-        "--node_features_dropout", default=0.2, type=float, help="Dropout applied to the node features during training"
-    )
-    parser.add_argument("--ggnn_num_layers", default=4, type=int, help="Number of GGNN layers with distinct weights")
-    parser.add_argument("--ggnn_timesteps_per_layer", default=1, type=int, help="Number of GGNN propagations per layer")
-    parser.add_argument("--rnn_num_layers", default=1, type=int, help="Number of layers in the input and output rnns")
-    parser.add_argument(
-        "--rnn_hidden_size", default=256, type=int, help="Size of the input and output rnns hidden state"
-    )
-    parser.add_argument(
-        "--rnn_hidden_dropout", default=0.3, type=float, help="Dropout applied to the rnn hidden state during training"
-    )
-    parser.add_argument(
-        "--attend_all_nodes",
-        default=False,
-        action="store_true",
-        help="If enabled, attention and copying will consider all nodes "
-        "rather than only the ones in the primary sequence",
-    )
-    parser.add_argument(
-        "--only_graph_encoder",
-        default=False,
-        action="store_true",
-        help="If enabled, the model will ignore the sequence encoder, " "using only the graph structure",
-    )
-    parser.add_argument(
-        "--ignore_graph_encoder",
-        default=False,
-        action="store_true",
-        help="If enabled, the model ignore the graph encoder, using only " "the primary sequence encoder",
-    )
-    parser.add_argument(
-        "--copy_attention", default=False, action="store_true", help="Number of epochs to train the model"
-    )
-    parser.add_argument(
-        "--coverage_layer", default=False, action="store_true", help="Number of epochs to train the model"
-    )
-    parser.add_argument("--coverage_loss", default=0.0, type=float, help="Number of epochs to train the model")
-    parser.add_argument(
-        "--max_iterations", default=120, type=int, help="The maximum number of decoding iterations at inference time"
-    )
-    parser.add_argument("--beam_width", default=10, type=int, help="The number of beam to search while decoding")
-    parser.add_argument("--length_penalty", default=1.0, type=float, help="The length ")
-    parser.add_argument(
-        "--case_sensitive", default=False, action="store_true", help="If enabled, node labels are case sentitive"
-    )
-
-    # arguments for loading data
-    parser.add_argument(
-        "--train_source_file",
-        default=DEFAULT_TRAIN_SOURCE_FILE,
-        type=str,
-        help="Path to the jsonl.gz file containing the train input graphs",
-    )
-    parser.add_argument(
-        "--train_target_file",
-        default=DEFAULT_TRAIN_TARGET_FILE,
-        type=str,
-        help="Path to the jsonl.gz file containing the train input graphs",
-    )
-    parser.add_argument(
-        "--valid_source_file",
-        default=DEFAULT_VALID_SOURCE_FILE,
-        type=str,
-        help="Path to the jsonl.gz file containing the valid input graphs",
-    )
-    parser.add_argument(
-        "--valid_target_file",
-        default=DEFAULT_VALID_TARGET_FILE,
-        type=str,
-        help="Path to the jsonl.gz file containing the valid input graphs",
-    )
-    parser.add_argument(
-        "--infer_source_file",
-        default=None,
-        help="Path to the jsonl.gz file in which we wish to do inference " "after training is complete",
-    )
-    parser.add_argument(
-        "--infer_predictions_file", default=None, help="Path to the file to save the results from inference"
-    )
-    parser.add_argument(
-        "--node_vocab_file", default=DEFAULT_NODE_VOCAB_FILE, type=str, help="Path to the json containing the dataset"
-    )
-    parser.add_argument(
-        "--edge_vocab_file", default=DEFAULT_EDGE_VOCAB_FILE, type=str, help="Path to the json containing the dataset"
-    )
-    parser.add_argument(
-        "--target_vocab_file",
-        default=DEFAULT_TARGET_VOCAB_FILE,
-        type=str,
-        help="Path to the json containing the dataset",
-    )
-    parser.add_argument(
-        "--truncated_source_size",
-        default=500,
-        type=int,
-        help="Max size for source sequences in the input graphs after truncation",
-    )
-    parser.add_argument(
-        "--truncated_target_size", default=100, type=int, help="Max size for target sequences after truncation"
-    )
-    parser.add_argument("--model_name", default=DEFAULT_MODEL_NAME, type=str, help="Model name")
-
-    # arguments for persistence
-    parser.add_argument(
-        "--checkpoint_interval", default=5000, type=int, help="The number of steps between model checkpoints"
-    )
-    parser.add_argument("--checkpoint_dir", default=None, type=str, help="Directory to where to save the checkpoints")
-
-    # arguments for debugging
-    parser.add_argument(
-        "--debug_mode", default=False, action="store_true", help="If true, it will enable the tensorflow debugger"
-    )
-
+    parser = configure_arg_parser()
     args = parser.parse_args()
 
     model = build_model(args)
@@ -211,13 +37,15 @@ def main():
     elif not os.path.exists(os.path.join(args.checkpoint_dir, "valid")):
         os.makedirs(os.path.join(args.checkpoint_dir, "valid"))
 
-    train_and_eval(model, args)
-
     if args.infer_source_file is not None:
         infer(model, args)
+    else:
+        train_and_eval(model, args)
 
 
 def train_and_eval(model, args):
+    tf.set_random_seed(args.seed)
+
     optimizer = build_optimizer(args)
     metadata = build_metadata(args)
     config = build_config(args)
@@ -268,7 +96,7 @@ def train_and_eval(model, args):
 
         global_step = tf.train.get_global_step()
 
-        best_metric = 0
+        best_loss = 0
         worse_epochs = 0
 
         saver = tf.train.Saver(max_to_keep=100)
@@ -288,50 +116,45 @@ def train_and_eval(model, args):
 
         window_loss = 0
         window_steps = 0
-        for train_step in range(initial_step + 1, args.train_steps + 1):
+        tqdm_range = tqdm(range(initial_step + 1, args.train_steps + 1), desc="Training")
+        for train_step in tqdm_range:
             step_loss, _ = session.run([train_tb_loss, train_op])
             window_loss += step_loss
             window_steps += 1
 
             # check if in logging schedule
             if train_step % args.logging_window == 0:
-                train_summary.scalar("loss", window_loss / window_steps, train_step)
-                print("step %d, train loss: %0.2f" % (train_step, window_loss / window_steps))
+                cur_loss = window_loss / window_steps
+                train_summary.scalar("loss", cur_loss, train_step)
+                tqdm_range.set_postfix({f"loss (step {train_step})": cur_loss})
+                # print("step %d, train loss: %0.2f" % (train_step, cur_loss)))
                 window_loss = 0
                 window_steps = 0
-
-            # and checkpointing schedule
-            if train_step % args.checkpoint_interval == 0:
-                print("saving current model...")
-                saver.save(session, os.path.join(args.checkpoint_dir, "current.ckpt"), global_step)
 
             # after training, do evaluation if on schedule
             if train_step % args.validation_interval == 0:
                 valid_loss, valid_rouge = evaluate(
-                    session, model, valid_iterator, valid_tb_loss, predictions, valid_targets
+                    session, model, valid_iterator, valid_tb_loss, predictions, valid_targets, args.batch_size
                 )
-                print("eval loss: %0.2f, eval rouge: %0.2f" % (valid_loss, valid_rouge))
+                tqdm.write("eval loss: %0.2f, eval rouge: %0.2f" % (valid_loss, valid_rouge))
                 valid_summary.scalar("loss", valid_loss, train_step)
                 valid_summary.scalar("rouge", valid_rouge, train_step)
-                if args.validation_metric == "rouge":
-                    # check for new best model
-                    if valid_rouge > best_metric:
-                        best_metric = valid_rouge
-                        worse_epochs = 0
-                        print("saving best model...")
-                        saver.save(session, os.path.join(args.checkpoint_dir, "best.ckpt"))
-                    else:
-                        worse_epochs += 1
-
-                    # and stop training if triggered patience
-                    if worse_epochs >= args.patience:
-                        print("early stopping triggered...")
-                        break
+                if valid_loss < best_loss:
+                    best_loss = valid_loss
+                    worse_epochs = 0
                 else:
-                    raise ValueError("%s not supported as validation metric" % args.validation_metric)
+                    worse_epochs += 1
+
+                tqdm.write("saving current model...")
+                saver.save(session, os.path.join(args.checkpoint_dir, f"{args.model_name}.ckpt"), global_step)
+
+                # and stop training if triggered patience
+                if worse_epochs >= args.patience:
+                    tqdm.write("early stopping triggered...")
+                    break
 
 
-def evaluate(session, model, iterator, loss, predictions, targets):
+def evaluate(session, model, iterator, loss, predictions, targets, batch_size):
     """ """
     valid_loss = 0
     valid_steps = 0
@@ -339,6 +162,8 @@ def evaluate(session, model, iterator, loss, predictions, targets):
     valid_predictions = []
 
     session.run([iterator.initializer, tf.tables_initializer()])
+    n_steps = ceil(len(targets) / batch_size)
+    tqdm_pbar = tqdm(desc="Evaluation", total=n_steps, leave=False)
     while True:
         try:
             batch_loss, batch_predictions = session.run([loss, predictions])
@@ -349,8 +174,10 @@ def evaluate(session, model, iterator, loss, predictions, targets):
             valid_loss += batch_loss
             valid_predictions = valid_predictions + batch_predictions
             valid_steps += 1
+            tqdm_pbar.update()
         except tf.errors.OutOfRangeError:
             break
+    tqdm_pbar.close()
 
     loss = valid_loss / valid_steps
     rouge = compute_rouge(valid_predictions, targets)
@@ -467,10 +294,13 @@ def infer(model, args):
         allow_soft_placement=True, log_device_placement=False, gpu_options=tf.GPUOptions(allow_growth=False)
     )
 
+    _ = tf.Variable(initial_value="fake_variable")
+
+    ckpt_name = args.infer_ckpt or "best.ckpt"
     iterator = get_iterator_from_input_fn(input_fn)
     with tf.Session(config=session_config) as session:
         saver = tf.train.Saver(max_to_keep=100)
-        saver.restore(session, os.path.join(args.checkpoint_dir, "best.ckpt"))
+        saver.restore(session, os.path.join(args.checkpoint_dir, ckpt_name))
 
         # build eval graph, loss and prediction ops
         features = iterator.get_next()

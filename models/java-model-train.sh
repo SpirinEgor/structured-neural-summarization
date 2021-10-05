@@ -27,10 +27,11 @@ python train_and_eval.py --train_source_file "$DATA_FOLDER/$TRAIN/$GRAPHS" \
                          --copy_attention  \
                          --model_name "$MODEL_NAME"  \
                          --checkpoint_dir "$CHECKPOINT_DIR/$MODEL_NAME" \
-                         --rnn_hidden_size 256 \
                          --rnn_hidden_dropout 0.0 \
                          --node_features_dropout 0.0 \
                          --validation_interval 5000 \
                          --embeddings_dropout 0.0 \
                          --case_sensitive  \
-                         --attend_all_nodes
+                         --attend_all_nodes \
+                         --rnn_hidden_size 256 \
+                         --max_iterations 10

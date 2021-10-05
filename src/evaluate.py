@@ -41,7 +41,7 @@ def get_eval_predictions(session, model, predictions_fn, loss_fn=None, targets=N
 
 def evaluate(session, model, iterator, loss, predictions, targets, batch_size):
     session.run([iterator.initializer, tf.tables_initializer()])
-    valid_loss, valid_predictions = get_eval_predictions(session, model, predictions, targets, batch_size)
+    valid_loss, valid_predictions = get_eval_predictions(session, model, predictions, loss, targets, batch_size)
     rouge = compute_rouge(valid_predictions, targets)
     precision, recall, f1 = compute_f1(valid_predictions, targets)
     return loss, rouge, precision, recall, f1

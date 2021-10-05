@@ -38,4 +38,5 @@ python train_and_eval.py --train_source_file "$DATA_FOLDER/$TRAIN/$GRAPHS" \
                          --node_features_size 10 \
                          --ggnn_num_layers 1 \
                          --rnn_hidden_size 10 \
+                         --max_iterations 10
 

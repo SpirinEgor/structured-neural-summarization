@@ -82,11 +82,11 @@ def main(input_folder: str, output_folder: str):
     edge_vocabulary.serialize(join(output_folder, EDGE_VOCAB))
 
     print("Start collecting vocabulary for targets")
-    node_vocabulary = Vocab(
+    target_vocabulary = Vocab(
         special_tokens=[constants.PADDING_TOKEN, constants.START_OF_SENTENCE_TOKEN, constants.END_OF_SENTENCE_TOKEN]
     )
-    node_vocabulary.add_from_file(train_targets)
-    node_vocabulary.serialize(join(output_folder, TARGET_VOCAB))
+    target_vocabulary.add_from_file(train_targets)
+    target_vocabulary.serialize(join(output_folder, TARGET_VOCAB))
 
 
 if __name__ == "__main__":

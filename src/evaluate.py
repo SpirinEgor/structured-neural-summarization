@@ -44,4 +44,4 @@ def evaluate(session, model, iterator, loss, predictions, targets, batch_size):
     valid_loss, valid_predictions = get_eval_predictions(session, model, predictions, loss, targets, batch_size)
     rouge = compute_rouge(valid_predictions, targets)
     precision, recall, f1 = compute_f1(valid_predictions, targets)
-    return loss, rouge, precision, recall, f1
+    return valid_loss, rouge, precision, recall, f1
